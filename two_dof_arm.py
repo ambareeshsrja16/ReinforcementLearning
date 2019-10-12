@@ -1,5 +1,4 @@
 import numpy as np
-import math
 
 
 def getForwardModel(q0, q1,
@@ -160,38 +159,40 @@ def create_trajectory(steps=100,
     import pybulletgym.envs
     env = gym.make("ReacherPyBulletEnv-v0")
 
-    env.render()
+    # env.render()
     env.reset()
     desired_traj = get_samples_from_trajectory(steps)
-    obs_traj = np.zeros(shape=(2, steps), dtype=float)
+    final_trajectory = np.zeros(shape=(2, steps), dtype=float)
 
     for curr_episode in range(episodes):  # For multiple episodes, Default: episodes= 1
+        # Set robot to starting spot and record starting point in trajectory
         env.unwrapped.robot.central_joint.reset_position(q0_curr, 0)
         env.unwrapped.robot.elbow_joint.reset_position(q1_curr, 0)
-        for robo_step in range(steps):
-            q0_obs, q0_dot_obs = env.unwrapped.robot.central_joint.current_position()  # Current Observation from Sensor
-            q1_obs, q1_dot_obs = env.unwrapped.robot.elbow_joint.current_position()
-            obs_traj[:, robo_step] = getForwardModel(q0_obs,q1_obs)[:2]   # Current trajectory x
+        final_trajectory[:, 0] = getForwardModel(q0_curr, q1_curr)[:2]
 
-            if robo_step == 0 or robo_step == steps-1:
-                print("\nJoint 1", q0_obs)
-                print("Joint 2", q1_obs)
+        vx_ref, vy_ref = 0, 0
+        q0_obs, q1_obs = q0_curr, q1_curr
+        q0_dot_obs, q1_dot_obs = 0, 0
 
-            vx_ref, vy_ref = 0, 0
-            x_desired = desired_traj[0,robo_step]
-            y_desired = desired_traj[1, robo_step]
-            # action = env.action_space.sample() #[0.5, 0.7] Sample action. Torque for q0, q1
+        for robo_step in range(steps-1):
+            x_desired = desired_traj[0, robo_step+1]
+            y_desired = desired_traj[1, robo_step+1]
+
+            # action = env.action_space.sample() #[0.5, 0.7] Sample action (Torque) for q0, q1
             action = get_torque(q0_obs, q1_obs, q0_dot_obs, q1_dot_obs,
                                 x_desired, y_desired, vx_ref, vy_ref,
                                 kp_1, kp_2, kd_1, kd_2)
-            _, _, done, _ = env.step(action) # Provide Torque to Robot
 
-            if done:
-                print(f"Episode finished after {robo_step} steps")
-                break
+            _ = env.step(action)  # Provide Torque to Robot
+
+            q0_obs, q0_dot_obs = env.unwrapped.robot.central_joint.current_position()  # Current Observation from Sensor
+            q1_obs, q1_dot_obs = env.unwrapped.robot.elbow_joint.current_position()
+
+            final_trajectory[:, robo_step+1] = getForwardModel(q0_obs, q1_obs)[:2]  # Current trajectory x
+
     env.close()
 
-    return obs_traj
+    return final_trajectory
 
 
 def plot_trajectory(desired_traj, final_trajectory):
@@ -205,13 +206,33 @@ def plot_trajectory(desired_traj, final_trajectory):
     assert isinstance(final_trajectory, np.ndarray) and final_trajectory.shape[0] == 2
 
     import matplotlib.pyplot as plt
-    plt.plot(desired_trajectory[0, :], desired_trajectory[1, :], "r-", linewidth=2)
     plt.plot(final_trajectory[0, :], final_trajectory[1, :], "g-", linewidth=2)
+    plt.plot(desired_trajectory[0, :], desired_trajectory[1, :], "r-", linewidth=2)
+
+    # DEBUG
+    # # Single points
+    # plt.scatter(final_trajectory[0, 0], final_trajectory[1, 0], c='g', marker='+', linewidths=1)
+    # plt.scatter(final_trajectory[0, -1], final_trajectory[1, -1], c='g', marker='+', linewidths=1)
+    # plt.scatter(desired_trajectory[0, 0], desired_trajectory[1, 0],  c='r', marker='o', linewidths=1)
+    # plt.scatter(desired_trajectory[0, -1], desired_trajectory[1, 90],  c='b', marker='o', linewidths=1)
+    # # All points
+    # plt.scatter(desired_trajectory[0, :], desired_trajectory[1, :], c='r', marker='o', linewidths=1)
+    # plt.scatter(final_trajectory[0, :], final_trajectory[1, :], c='g', marker='+', linewidths=1)
+
     plt.show()
 
 
 if __name__ == "__main__":
-    desired_trajectory = get_samples_from_trajectory(steps=100)
-    final_trajectory = create_trajectory(steps=100)
-    import pdb; pdb.set_trace()
+    steps = 5000
+    q0_curr, q1_curr = -np.pi, 0.0  # Start at leftmost tip of the figure [ Trajectory(-np.pi, -np.pi) ]
+    pd_controller_gains = (4.5, 4.5, 0.5, 0.5)
+
+    desired_trajectory = get_samples_from_trajectory(steps=steps)
+    final_trajectory = create_trajectory(steps,  *pd_controller_gains, q0_curr, q1_curr)
+
+    mse = np.mean(sum(desired_trajectory - final_trajectory)**2)
+    print("Mean Squared error between trajectories:", mse.item())
+
     plot_trajectory(desired_trajectory, final_trajectory)
+
+
