@@ -2,7 +2,8 @@ import numpy as np
 import math
 
 
-def getForwardModel(q0, q1, l0 = 0.1, l1 = 0.11 ):
+def getForwardModel(q0, q1,
+                    l0=0.1, l1=0.11):
     """
     Takes joint states(angles in radians) and returns end effector pose (3,1) numpy array
     """
@@ -19,7 +20,8 @@ def getForwardModel(q0, q1, l0 = 0.1, l1 = 0.11 ):
     return state
 
 
-def getJacobian(q0, q1, l0=0.1, l1=0.11):
+def getJacobian(q0, q1,
+                l0=0.1, l1=0.11):
     """
     Takes joint states(angles in radians) and returns Jacobian (3,2) np array
     """
@@ -37,10 +39,13 @@ def getJacobian(q0, q1, l0=0.1, l1=0.11):
     return jacobian
 
 
-def getIK(x,y, q0_current= 0, q1_current=0):
+def getIK(x, y,
+          q0_current=0, q1_current=0):
     """
-    Inverse kinematics using Jacobian Inverse
+    Inverse kinematics (using Jacobian Inverse)
 
+    :param q0_current: Current Joint angle 0
+    :param q1_current: Current Joint angle 1
     :param x: Position x
     :param y: Position y
     :return: Joint angles
@@ -51,7 +56,7 @@ def getIK(x,y, q0_current= 0, q1_current=0):
     inverse_jacobian = np.linalg.pinv(getJacobian(q0_current,q1_current))
     assert inverse_jacobian.shape == (2,3)
 
-    current_position = np.array([x,y,0]).reshape(-1,1)
+    current_position = np.array([x, y, 0]).reshape(-1,1)
 
     del_q = inverse_jacobian@current_position
     assert del_q.shape == (2,1)
@@ -79,16 +84,21 @@ def get_samples_from_trajectory(steps=100):
     return desired_traj
 
 
-def create_trajectory(steps=100, kp_1=1.0, kp_2=1.0, kd_1=1.0, kd_2=1.0, episodes=1):
+def create_trajectory(steps=100,
+                      kp_1=1.0, kp_2=1.0, kd_1=1.0, kd_2=1.0,
+                      q0_curr=-np.pi, q1_curr = np.pi,
+                      episodes=1):
     """
     Given steps, Proportion Control(kp_1, kp_2) and Differential Control parameters (kd_1, kd_2) return observed trajectory (x_obs, y_obs)
-    :param episodes:
-    :param steps:
-    :param kp_1:
-    :param kp_2:
-    :param kd_1:
-    :param kd_2:
-    :return:
+    :param q0_curr: Starting position Joint 0
+    :param q1_curr: Starting position Joint 1
+    :param episodes: Number of sequences (one sequence is, one complete lap along the trajectory)
+    :param steps: Number of discretized steps
+    :param kp_1: Proportion Control [0][0]
+    :param kp_2: Proportion Control [1][1]
+    :param kd_1: Derivative Control [0][0]
+    :param kd_2: Derivative Control [1][1]
+    :return: obs_trajectory : (2, steps) numpy array
     """
     assert isinstance(steps, int), "steps has to be integer"
     assert all(isinstance(i, (float, int)) for i in (kp_1, kp_2, kd_1, kd_2)),"PD controller gains should be integer, float"
@@ -96,44 +106,82 @@ def create_trajectory(steps=100, kp_1=1.0, kp_2=1.0, kd_1=1.0, kd_2=1.0, episode
     import gym
     import pybulletgym.envs
     env = gym.make("ReacherPyBulletEnv-v0")
-    q0_curr = 0  # Initial position
-    q1_curr = 0
+
+    desired_traj = get_samples_from_trajectory(steps)
+    obs_traj = np.zeros(shape=(2,steps), dtype=float)
 
     for curr_episode in range(episodes):  # For multiple episodes, Default: episodes= 1
         env.unwrapped.robot.central_joint.reset_position(q0_curr, 0)
         env.unwrapped.robot.elbow_joint.reset_position(q1_curr, 0)
         for robo_step in range(steps):
             env.render()  # WHY HERE?
-            q0_obs, q0_dot = env.unwrapped.robot.central_joint.current_position()  # Current Observation from Sensor
-            q1_obs, q1_dot = env.unwrapped.robot.elbow_joint.current_position()
+            q0_obs, q0_dot_obs = env.unwrapped.robot.central_joint.current_position()  # Current Observation from Sensor
+            q1_obs, q1_dot_obs = env.unwrapped.robot.elbow_joint.current_position()
+
+            obs_traj[0, robo_step] = q0_obs  # Current trajectory x
+            obs_traj[1, robo_step] = q1_obs  # Current trajectory y
 
             print("\nJoint 1", q0_obs)
             print("Joint 2", q1_obs)
 
-            #action = env.action_space.sample() #[0.5, 0.7] Sample action. Torque for q0, q1
-            action = get_torque(q0_obs, q1_obs, kp_1, kp_2, kd_1, kd_2)
-            _, _, done, _ = env.step(action)
+            vx_ref, vy_ref = 0, 0
+            x_desired = desired_traj[0,robo_step]
+            y_desired = desired_traj[1, robo_step]
+            # action = env.action_space.sample() #[0.5, 0.7] Sample action. Torque for q0, q1
+            action = get_torque(q0_obs, q1_obs, q0_dot_obs, q1_dot_obs,
+                                x_desired, y_desired, vx_ref, vy_ref,
+                                kp_1, kp_2, kd_1, kd_2)
+            _, _, done, _ = env.step(action) # Provide Torque to Robot
+
+
             if done:
                 print(f"Episode finished after {robo_step} steps")
                 break
     env.close()
 
+    return obs_traj
 
-def get_torque(q0_obs, q1_obs, *args):
+
+def get_torque(q0_obs, q1_obs,
+               q0_dot_obs, q1_dot_obs,
+               x_desired, y_desired,
+               vx_ref=0, vy_ref=0,
+               *args):
     """
     Given Current observation and PD controller terms, return Torque (action for env action space)
-    :param q0_obs:
+    :param vx_ref: Desired velocity for Derivative control, Default to zero: to try to get robot to rest after each step
+    :param vy_ref: ""
+    :param x_desired: Desired position (x)
+    :param y_desired:
+    :param q0_obs: Joint angle 0 (read from sensor)
     :param q1_obs:
-    :param args:
-    :return:
+    :param q0_dot_obs: Joint angle velocity 0 (read from sensor)
+    :param q1_dot_obs:
+    :param args: kp_1, kp_2, kd_1, kd_2 (PD Controller Gains)
+    :return: joint_torques(action)
     """
 
     kp_1, kp_2, kd_1, kd_2 = args
-    assert all(isinstance(i, (float, int)) for i in (kp_1, kp_2, kd_1, kd_2)), "PD controller gains should be integer, float"
 
-    tau_1 = 0.0
-    tau_2 = 0.0
-    action = np.array([tau_1, tau_2], dtype=float)
+    assert  isinstance(vx_ref,(int, float)) and isinstance(vy_ref, (int, float))
+    assert all(isinstance(i, (float, int))
+               for i in (kp_1, kp_2, kd_1, kd_2)), "PD controller gains should be integer, float"
 
-    return action
+    KP = np.diag([kp_1, kp_2])
+    KD = np.diag([kd_1, kd_2])
+
+    jacobian = getJacobian(q0_obs,q1_obs)
+    x_curr, y_curr = getForwardModel(q0_obs, q1_obs)[:2]
+    e = np.array([x_desired - x_curr.item(), y_desired - y_curr.item()]).reshape(-1, 1)  # Error in position
+
+    vx_curr, vy_curr = jacobian @ np.array([q0_dot_obs, q1_dot_obs]).reshape(-1, 1)   # dx = J dq
+    V_e = np.array([vx_ref - vx_curr.item(), vy_ref - vy_curr.item()]).reshape(-1, 1)  # Error in velocity
+
+    assert e.shape == (2,1) and V_e.shape == (2,1) , f"{e.shape}, {V_e.shape}"
+
+    force_end_eff = KP @ e + KD @ V_e  # PD Controller
+    joint_torques = jacobian.T @ force_end_eff  # Torque= (J)^T @ F
+
+    assert joint_torques.shape == (2,), f"{joint_torques.shape}"
+    return joint_torques
 
