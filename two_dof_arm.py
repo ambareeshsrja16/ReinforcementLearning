@@ -61,22 +61,22 @@ def getIK(x, y,
     assert all(isinstance(i, (int, float)) for i in (x, y)), "Positions have to be floats or integers"
     assert all(isinstance(i, (int, float)) for i in (q0_current, q1_current)), "Angles have to be floats or integers"
 
-    inverse_jacobian = np.linalg.pinv(getJacobian(q0_current,q1_current))
-    assert inverse_jacobian.shape == (2,3)
+    inverse_jacobian = np.linalg.pinv(getJacobian(q0_current, q1_current))
+    assert inverse_jacobian.shape == (2, 2), f"{inverse_jacobian.shape}"
 
-    current_position = np.array([x, y, 0]).reshape(-1,1)
+    current_position = np.array([x, y]).reshape(-1, 1)
 
     del_q = inverse_jacobian@current_position
-    assert del_q.shape == (2,1)
+    assert del_q.shape == (2, 1)
 
     return del_q
 
 
-def get_torque(q0_obs, q1_obs,
-               q0_dot_obs, q1_dot_obs,
-               x_desired, y_desired,
-               vx_ref=0, vy_ref=0,
-               *args):
+def get_torque_end_effector_position(q0_obs, q1_obs,
+                                     q0_dot_obs, q1_dot_obs,
+                                     x_desired, y_desired,
+                                     vx_ref=0, vy_ref=0,
+                                     *args):
     """
     Given Current observation and PD controller terms, return Torque (action for env action space)
     :param vx_ref: Desired velocity for Derivative control, Default to zero: to try to get robot to rest after each step
@@ -93,7 +93,7 @@ def get_torque(q0_obs, q1_obs,
 
     kp_1, kp_2, kd_1, kd_2 = args
 
-    assert  isinstance(vx_ref,(int, float)) and isinstance(vy_ref, (int, float))
+    assert isinstance(vx_ref,(int, float)) and isinstance(vy_ref, (int, float))
     assert all(isinstance(i, (float, int))
                for i in (kp_1, kp_2, kd_1, kd_2)), "PD controller gains should be integer, float"
 
@@ -111,6 +111,51 @@ def get_torque(q0_obs, q1_obs,
 
     force_end_eff = KP @ e + KD @ V_e  # PD Controller
     joint_torques = (jacobian.T @ force_end_eff).reshape(-1)  # Torque= (J)^T @ F
+
+    assert joint_torques.shape == (2,), f"{joint_torques.shape}"
+    return joint_torques
+
+
+def get_torque_joint_angle(q0_obs, q1_obs,
+                           q0_dot_obs, q1_dot_obs,
+                           x_desired, y_desired,
+                           q0_dot_ref, q1_dot_ref,
+                           *args):
+    """
+    Given Current Velocity and Angle (observation) and PD controller terms, return Torque (action for env action space)
+    :param x_desired: Desired position (x)
+    :param y_desired:
+    :param q0_dot_ref: Needed angular velocity Ref (Same as vx_ref, vy_ref in get_torque_end_effector_position function
+    :param q1_dot_ref:
+    :param q0_obs: Joint angle 0 (read from sensor)
+    :param q1_obs:
+    :param q0_dot_obs: Joint angle velocity 0 (read from sensor)
+    :param q1_dot_obs:
+    :param args: kp_1, kp_2, kd_1, kd_2 (PD Controller Gains)
+    :return: joint_torques(action)
+    """
+
+    kp_1, kp_2, kd_1, kd_2 = args
+
+    assert all(isinstance(i, (float, int))
+               for i in (q0_obs, q1_obs, q0_dot_obs, q1_dot_obs, q0_dot_ref)),\
+        "Observations and reference should be float/int"
+    assert all(isinstance(i, (float, int))
+               for i in (kp_1, kp_2, kd_1, kd_2)), "PD controller gains should be integer, float"
+
+    KP = np.diag([kp_1, kp_2])
+    KD = np.diag([kd_1, kd_2])
+
+    # Use Inverse Kinematics to get desired joint angle
+    q0_desired, q1_desired = getIK(x_desired, y_desired,
+                                   q0_current=q0_obs, q1_current=q1_obs)
+
+    e = np.array([q0_desired.item() - q0_obs, q1_desired.item() - q1_obs]).reshape(-1, 1)  # Error in joint angle
+    T_e = np.array([q0_dot_ref - q0_dot_obs, q1_dot_ref - q1_dot_obs]).reshape(-1, 1)  # Error in angular velocity
+
+    assert e.shape == (2,1) and T_e.shape == (2, 1), f"{e.shape}, {T_e.shape}"
+    joint_torques = KP @ e + KD @ T_e  # PD Controller
+    joint_torques = joint_torques.reshape(-1)
 
     assert joint_torques.shape == (2,), f"{joint_torques.shape}"
     return joint_torques
@@ -179,7 +224,7 @@ def create_trajectory(steps=100,
             y_desired = desired_traj[1, robo_step+1]
 
             # action = env.action_space.sample() #[0.5, 0.7] Sample action (Torque) for q0, q1
-            action = get_torque(q0_obs, q1_obs, q0_dot_obs, q1_dot_obs,
+            action = get_torque_end_effector_position(q0_obs, q1_obs, q0_dot_obs, q1_dot_obs,
                                 x_desired, y_desired, vx_ref, vy_ref,
                                 kp_1, kp_2, kd_1, kd_2)
 
@@ -194,6 +239,75 @@ def create_trajectory(steps=100,
 
     return final_trajectory
 
+
+def create_trajectory_general(steps=100,
+                      kp_1=1.0, kp_2=1.0, kd_1=1.0, kd_2=1.0,
+                      q0_curr=-np.pi, q1_curr=-np.pi,
+                      episodes=1, input_signal="end_effector_position"):
+    """
+    Given steps, Proportion Control(kp_1, kp_2) and Differential Control parameters (kd_1, kd_2) return observed trajectory (x_obs, y_obs)
+    :param q0_curr: Starting position Joint 0
+    :param q1_curr: Starting position Joint 1
+    :param episodes: Number of sequences (one sequence is, one complete lap along the trajectory)
+    :param steps: Number of discretized steps
+    :param kp_1: Proportion Control [0][0]
+    :param kp_2: Proportion Control [1][1]
+    :param kd_1: Derivative Control [0][0]
+    :param kd_2: Derivative Control [1][1]
+    :return: obs_trajectory : (2, steps) numpy array
+    """
+    assert isinstance(steps, int), "steps has to be integer"
+    assert all(isinstance(i, (float, int)) for i in (kp_1, kp_2, kd_1, kd_2)),"PD controller gains should be integer, float"
+    assert isinstance(input_signal, str)
+
+    import gym
+    import pybulletgym.envs
+    env = gym.make("ReacherPyBulletEnv-v0")
+
+    # env.render()
+    env.reset()
+    desired_traj = get_samples_from_trajectory(steps)
+    final_trajectory = np.zeros(shape=(2, steps), dtype=float)
+
+    for curr_episode in range(episodes):  # For multiple episodes, Default: episodes= 1
+        # Set robot to starting spot and record starting point in trajectory
+        env.unwrapped.robot.central_joint.reset_position(q0_curr, 0)
+        env.unwrapped.robot.elbow_joint.reset_position(q1_curr, 0)
+        final_trajectory[:, 0] = getForwardModel(q0_curr, q1_curr)[:2]
+
+        q0_obs, q1_obs = q0_curr, q1_curr
+        q0_dot_obs, q1_dot_obs = 0, 0
+
+        for robo_step in range(steps-1):
+            x_desired = desired_traj[0, robo_step+1]
+            y_desired = desired_traj[1, robo_step+1]
+
+            # action = env.action_space.sample() #[0.5, 0.7] Sample action (Torque) for q0, q1
+            if input_signal == "end_effector_position":
+                vx_ref, vy_ref = 0, 0
+                action = get_torque_end_effector_position(q0_obs, q1_obs,
+                                                          q0_dot_obs, q1_dot_obs,
+                                                          x_desired, y_desired,
+                                                          vx_ref, vy_ref,
+                                                          kp_1, kp_2, kd_1, kd_2)
+            else:
+                q0_dot_ref, q1_dot_ref = 0, 0
+                action = get_torque_joint_angle(q0_obs, q1_obs,
+                                                q0_dot_obs, q1_dot_obs,
+                                                x_desired, y_desired,
+                                                q0_dot_ref, q1_dot_ref,
+                                                kp_1, kp_2, kd_1, kd_2)
+
+            _ = env.step(action)  # Provide Torque to Robot
+
+            q0_obs, q0_dot_obs = env.unwrapped.robot.central_joint.current_position()  # Current Observation from Sensor
+            q1_obs, q1_dot_obs = env.unwrapped.robot.elbow_joint.current_position()
+
+            final_trajectory[:, robo_step+1] = getForwardModel(q0_obs, q1_obs)[:2]  # Current trajectory x
+
+    env.close()
+
+    return final_trajectory
 
 def plot_trajectory(desired_traj, final_trajectory):
     """
@@ -225,10 +339,20 @@ def plot_trajectory(desired_traj, final_trajectory):
 if __name__ == "__main__":
     steps = 5000
     q0_curr, q1_curr = -np.pi, 0.0  # Start at leftmost tip of the figure [ Trajectory(-np.pi, -np.pi) ]
-    pd_controller_gains = (4.5, 4.5, 0.5, 0.5)
+    pd_controller_gains = (2, 2, 1, 1)
+
+    input_signals = {1: "end_effector_position",
+                     2: "joint_angle"}
+
+    # getIK(position_desired=np.array([1.28587914e-17, 2.10000000e-01]), ini
+    #       ...: tial_guess = np.array([0.3, 0.4]),
+    #getIK(-2.10000000e-01,  2.57175828e-17,0.3,0.4)
+    import pdb;pdb.set_trace()
 
     desired_trajectory = get_samples_from_trajectory(steps=steps)
-    final_trajectory = create_trajectory(steps,  *pd_controller_gains, q0_curr, q1_curr)
+    final_trajectory = create_trajectory_general(steps,  *pd_controller_gains,
+                                                 q0_curr, q1_curr,
+                                                 input_signal=input_signals[2])
 
     mse = np.mean(sum(desired_trajectory - final_trajectory)**2)
     print("Mean Squared error between trajectories:", mse.item())
