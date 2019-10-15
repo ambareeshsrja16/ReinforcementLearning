@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import gym
 import pybulletgym.envs
 
+
 def getForwardModel(q0, q1,
                     l0=0.1, l1=0.11):
     """
@@ -36,7 +37,6 @@ def getJacobian(q0, q1,
     :return:
     """
     assert all(isinstance(i, (int, float)) for i in (q0, q1)), "Angles have to be floats or integers"
-    #assert all(-np.pi <= i <= np.pi for i in (q0, q1)), f" {q0, q1} Angles should be radians between -Pi and +Pi"
 
     jacobian = np.ones(shape=(2,2), dtype=float)
 

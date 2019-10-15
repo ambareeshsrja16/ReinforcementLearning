@@ -199,5 +199,3 @@ if __name__ == "__main__":
     needed_figures = (1, 2, 3)
     for i in needed_figures:
         get_tuned_trajectory(*pd_controller_gains, input_number=i)
-
-# TO DO : print number of steps in figure
