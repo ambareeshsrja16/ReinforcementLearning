@@ -186,17 +186,17 @@ def get_tuned_trajectory(*pd_controller_gains, input_number):
     print("MSE between trajectories:", mse.item())
     print(f"Steps taken for {input_signals[input_number]}: {steps}")
 
-    plot_trajectory(desired_trajectory, final_trajectory, title=input_signals[input_number]+" | Steps: "+str(steps))
+    plot_trajectory(desired_trajectory, final_trajectory, title=input_signals[input_number]+f" | Steps: {steps}"+f" | MSE: {mse:.2f}")
 
 
 if __name__ == "__main__":
 
-    pd_controller_gains = (3, 2)
+    pd_controller_gains = (1.3, 0.5)
     input_signals = {1: "Linear",
                      2: "FigureEight",
                      3: "Circle"}
 
-    needed_figures = (2, 3)
+    needed_figures = (1, 2, 3)
     for i in needed_figures:
         get_tuned_trajectory(*pd_controller_gains, input_number=i)
 
