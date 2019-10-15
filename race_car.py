@@ -1,0 +1,182 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import gym
+import pybulletgym.envs
+
+
+def get_angle_thrust(*args):
+    """
+    kp_1, kp_2, kd_1, kd_2, kw_1 = args[:5]
+    delta_x, delta_y, delta_vx, delta_vy, delta_w = args[5:]
+    :return:
+    """
+    kp, kd = args[:2]
+    delta_x, delta_y, v, theta = args[2:]
+    # import pdb;pdb.set_trace()
+    # assert all(isinstance(i, (float, int))for i in args), f"Observations, PD controller gains should be float/int \n {args}"
+
+    new_theta = np.arctan2(delta_y, delta_x)
+
+    wheel_angle = new_theta - theta
+    if -np.pi <= wheel_angle
+        wheel_angle += 2*np.pi
+    elif  <= np.pi:
+        wheel_angle -= 2*np.pi
+
+    # DEBUG
+    print("dy, dx", delta_y, delta_x)
+    print("NEW THETA, THETA, WHEEL_ANGLE")
+    print(np.rad2deg([new_theta, theta, wheel_angle]))
+
+    # Normalize between -1,1
+    wheel_angle = ((wheel_angle - (-np.pi/2))/np.pi)*2 - 1  # x - x_min/ (x_max- x_min)-> [0,1] *2 -> [0,2]-> -1 ->[-1,1]
+
+    e = np.sqrt((delta_x**2 + delta_y**2))
+
+    v_desired = np.array([np.sqrt((delta_x**2 + delta_y**2) / (np.cos(wheel_angle))**2)])
+    V_e = v_desired - v  # Error in linear velocity
+
+    thrust = kp*e + kd *V_e  # PD Controller
+    thrust = thrust.reshape(-1)
+
+    # Clipping if it goes beyond limits
+    thrust = np.clip(thrust, 0, 20).item()
+    # Normalizing thrust to [-1,1]
+    thrust = (thrust/20)*2 - 1
+
+    # # DEBUG
+    # print("Final Wheel, thrust", wheel_angle, thrust)
+
+    return wheel_angle, thrust
+
+
+def create_trajectory_general(*args, input_signal="Circle"):
+    """
+    Given steps, Proportion Control(kp_1, kp_2) and Differential Control parameters (kd_1, kd_2) return observed trajectory (x_obs, y_obs)
+    :param input_signal:
+    :param kw_1:
+    :param q0_curr: Starting position Joint 0
+    :param q1_curr: Starting position Joint 1
+    :param episodes: Number of sequences (one sequence is, one complete lap along the trajectory)
+    :param steps: Number of discretized steps
+    :param kp_1: Proportion Control [0][0]
+    :param kp_2: Proportion Control [1][1]
+    :param kd_1: Derivative Control [0][0]
+    :param kd_2: Derivative Control [1][1]
+    :return: obs_trajectory : (2, steps) numpy array
+    """
+    assert all(isinstance(i, (float, int)) for i in args), "PD controller gains should be integer, float"
+    assert isinstance(input_signal, str)
+
+    from racecar.SDRaceCar import SDRaceCar
+    env = SDRaceCar(render_env=False, track=input_signal)
+
+    desired_trajectory = []
+    final_trajectory = []
+    actions_taken = []  # Remove after DEBUG
+
+    state = env.reset()
+    x, y = state[-1]
+    theta = state[2]
+    vx, vy = state[3], state[4]
+    w = state[5]
+    x_desired, y_desired = state[-1]  # next desired position, from track
+
+    env.x, env.y = x, y # SET CAR TO START POSITION?
+    desired_trajectory.append(np.array([x_desired, y_desired]))
+    final_trajectory.append(np.array([x, y]))  # x, y
+
+    previous_ind = 0
+    steps = 0
+    done = False
+
+    while not done:
+        delta_x, delta_y = x_desired-x, y_desired-y
+        v = np.sqrt(vx**2 + vy**2).item()
+
+        action = get_angle_thrust(*args,
+                                  delta_x, delta_y, v, theta)
+
+        state, r, done = env.step(action)
+        x, y = state[:2]
+        theta = state[2]
+        vx, vy = state[3:5]
+        w = state[5]
+        x_desired, y_desired = state[-1]  # next desired position, from track
+
+        actions_taken.append(action)
+        desired_trajectory.append(state[-1])  # h
+        final_trajectory.append(np.array([state[0], state[1]]))  # x, y
+
+        steps += 1
+        current_ind = env.closest_track_ind
+
+        # CONDITION TO CHECK lap-completion
+        if current_ind - previous_ind <= -500:
+            done = True
+            # # DEBUG
+            # print("Steps (DONE):", steps)
+        previous_ind = current_ind
+
+    print("Steps(RETURN):", steps)
+    return desired_trajectory, final_trajectory
+
+
+def plot_trajectory(desired_traj, final_trajectory, title):
+    """
+    Plot Trajectory
+    :param final_trajectory:  Trajectory to be plotted, numpy array (2, steps)
+    :param desired_traj:
+    :param title: title of plot
+    :return: None
+    """
+    assert isinstance(desired_traj, np.ndarray) and desired_traj.shape[0] == 2
+    assert isinstance(final_trajectory, np.ndarray) and final_trajectory.shape[0] == 2
+
+    plt.ioff()
+
+    # # Plot trajectory
+    plt.plot(desired_trajectory[0, :], desired_trajectory[1, :], "r-", linewidth=2, label='Desired Trajectory')
+    # plt.plot(final_trajectory[0, :], final_trajectory[1, :], "g-", linewidth=2, label='Final Trajectory')
+
+    # # Single point
+    # plt.scatter(desired_trajectory[0, 0], desired_trajectory[1, 0], c='y', marker='o', label='Desired Trajectory Start')
+    # plt.scatter(final_trajectory[0, 0], final_trajectory[1, 0], c='b', marker='o', label='Final Trajectory Start')
+
+    # Few points
+    # until = 50  # until k steps
+    # plt.scatter(desired_trajectory[0, :until], desired_trajectory[1, :until], c='r', marker='.', label='Desired Trajectory')
+    # plt.scatter(final_trajectory[0, :until], final_trajectory[1, :until], c='g', marker='.', label='Final Trajectory')
+
+    # # All points
+    # plt.scatter(desired_trajectory[0, :], desired_trajectory[1, :], c='r', marker='.', label='Desired Trajectory')
+    plt.scatter(final_trajectory[0, :], final_trajectory[1, :], c='g', marker='.', label='Final Trajectory')
+
+    plt.legend(loc='best', prop={'size': 6})
+    plt.title(title)
+    plt.show()
+
+
+if __name__ == "__main__":
+
+    pd_controller_gains = (2, 1)
+    input_signals = {1: "Linear",
+                     2: "FigureEight",
+                     3: "Circle"}
+    inp = 2
+    desired_trajectory_list, final_trajectory_list = create_trajectory_general(*pd_controller_gains,
+                                                                     input_signal=input_signals[inp])
+
+    desired_trajectory = np.zeros((2, len(desired_trajectory_list)))
+    final_trajectory = np.zeros((2, len(desired_trajectory_list)))
+
+    for i in range(len(desired_trajectory_list)):
+        desired_trajectory[0,i], desired_trajectory[1,i] = desired_trajectory_list[i]
+        final_trajectory[0,i], final_trajectory[1,i] = final_trajectory_list[i]
+
+    mse = np.mean(sum(desired_trajectory - final_trajectory)**2)
+    print("MSE between trajectories:", mse.item())
+
+    plot_trajectory(desired_trajectory, final_trajectory, title=input_signals[inp])
+
+

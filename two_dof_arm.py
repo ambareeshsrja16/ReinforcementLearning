@@ -1,5 +1,7 @@
 import numpy as np
-
+import matplotlib.pyplot as plt
+import gym
+import pybulletgym.envs
 
 def getForwardModel(q0, q1,
                     l0=0.1, l1=0.11):
@@ -200,8 +202,6 @@ def create_trajectory_general(steps=100,
     assert all(isinstance(i, (float, int)) for i in (kp_1, kp_2, kd_1, kd_2)),"PD controller gains should be integer, float"
     assert isinstance(input_signal, str)
 
-    import gym
-    import pybulletgym.envs
     env = gym.make("ReacherPyBulletEnv-v0")
 
     # env.render()
@@ -261,7 +261,6 @@ def plot_trajectory(desired_traj, final_trajectory, title):
     assert isinstance(desired_traj, np.ndarray) and desired_traj.shape[0] == 2
     assert isinstance(final_trajectory, np.ndarray) and final_trajectory.shape[0] == 2
 
-    import matplotlib.pyplot as plt
     plt.plot(desired_trajectory[0, :], desired_trajectory[1, :], "r-", linewidth=2, label='Desired Trajectory')
     # plt.plot(final_trajectory[0, :], final_trajectory[1, :], "g-", linewidth=2, label='Final Trajectory')
 
@@ -270,7 +269,7 @@ def plot_trajectory(desired_traj, final_trajectory, title):
     # plt.scatter(final_trajectory[0, -1], final_trajectory[1, -1], c='g', marker='+', linewidths=1)
 
     # # All points
-    # plt.scatter(desired_trajectory[0, :], desired_trajectory[1, :], c='r', marker='o', label='Desired Trajectory')
+    # plt.scatter(desired_trajectory[0, :], desired_trajectory[1, :], c='r', marker='.', label='Desired Trajectory')
     plt.scatter(final_trajectory[0, :], final_trajectory[1, :], c='g', marker='.', label='Final Trajectory')
 
     plt.legend(loc='upper left', prop={'size': 6})
@@ -294,7 +293,7 @@ if __name__ == "__main__":
                                                  input_signal=input_signals[inp])
 
     mse = np.mean(sum(desired_trajectory - final_trajectory)**2)
-    print("Mean Squared error between trajectories:", mse.item())
+    print("MSE between trajectories:", mse.item())
 
     plot_trajectory(desired_trajectory, final_trajectory, title=input_signals[inp])
 
