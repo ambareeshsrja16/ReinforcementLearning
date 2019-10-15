@@ -12,40 +12,48 @@ def get_angle_thrust(*args):
     """
     kp, kd = args[:2]
     delta_x, delta_y, v, theta = args[2:]
-    # import pdb;pdb.set_trace()
-    # assert all(isinstance(i, (float, int))for i in args), f"Observations, PD controller gains should be float/int \n {args}"
 
+    assert all(isinstance(i, (float, int))for i in args), f"Observations, PD controller gains should be float/int \n {args}"
+
+    # Bicycle model. The point you want to get to is at delta_y, delta_x angle from your current point
     new_theta = np.arctan2(delta_y, delta_x)
 
     wheel_angle = new_theta - theta
-    if -np.pi <= wheel_angle
-        wheel_angle += 2*np.pi
-    elif  <= np.pi:
-        wheel_angle -= 2*np.pi
 
-    # DEBUG
-    print("dy, dx", delta_y, delta_x)
-    print("NEW THETA, THETA, WHEEL_ANGLE")
-    print(np.rad2deg([new_theta, theta, wheel_angle]))
+    # Correcting for wrap-around of wheel angle
+    # If the wheel angle is outside the range of [-pi, pi] bring it back to the range by adding or subtracting 2*pi
+    #   Notice that the wheel angle falls outside the range of [-pi, pi],
+    #       when the new_theta and theta are in different quadrants (some specific quadrants)
+    # The while loop is because, sometimes the difference evaluates to angles like 690 (degrees),
+    #   so you have to subtract twice
+    if wheel_angle <= -np.pi:
+        while not -np.pi <= wheel_angle <= np.pi:
+            wheel_angle += 2 * np.pi
+    elif wheel_angle >= np.pi:
+        while not -np.pi <= wheel_angle <= np.pi:
+            wheel_angle -= 2 * np.pi
+
+    # # DEBUG
+    # print("dy, dx", delta_y, delta_x)
+    # print("\nDesired Theta, Current Theta, Steering Angle (All in Degrees)")
+    # print(np.rad2deg([new_theta, theta, wheel_angle]))
 
     # Normalize between -1,1
-    wheel_angle = ((wheel_angle - (-np.pi/2))/np.pi)*2 - 1  # x - x_min/ (x_max- x_min)-> [0,1] *2 -> [0,2]-> -1 ->[-1,1]
+    #   (The action space of the wheel angle of car is [-1,1] mapped from actual range [-pi/2,pi/2])
+    wheel_angle = ((wheel_angle - (-np.pi/2))/np.pi)*2 - 1  # (x-x_min)/(x_max- x_min)-> [0,1] *2 -> [0,2]-> -1 ->[-1,1]
 
-    e = np.sqrt((delta_x**2 + delta_y**2))
-
+    e = np.sqrt((delta_x**2 + delta_y**2)) # Error in position
     v_desired = np.array([np.sqrt((delta_x**2 + delta_y**2) / (np.cos(wheel_angle))**2)])
     V_e = v_desired - v  # Error in linear velocity
 
-    thrust = kp*e + kd *V_e  # PD Controller
-    thrust = thrust.reshape(-1)
+    thrust = kp*e + kd*V_e  # PD Controller
+    thrust = thrust.item()
 
-    # Clipping if it goes beyond limits
+    # Clipping if it goes beyond limits, normalize between -1,1
+    #   (The action space of the thrust of car is [-1,1] mapped from actual range [0,20])
     thrust = np.clip(thrust, 0, 20).item()
     # Normalizing thrust to [-1,1]
     thrust = (thrust/20)*2 - 1
-
-    # # DEBUG
-    # print("Final Wheel, thrust", wheel_angle, thrust)
 
     return wheel_angle, thrust
 
@@ -73,13 +81,11 @@ def create_trajectory_general(*args, input_signal="Circle"):
 
     desired_trajectory = []
     final_trajectory = []
-    actions_taken = []  # Remove after DEBUG
 
     state = env.reset()
     x, y = state[-1]
     theta = state[2]
     vx, vy = state[3], state[4]
-    w = state[5]
     x_desired, y_desired = state[-1]  # next desired position, from track
 
     env.x, env.y = x, y # SET CAR TO START POSITION?
@@ -101,12 +107,10 @@ def create_trajectory_general(*args, input_signal="Circle"):
         x, y = state[:2]
         theta = state[2]
         vx, vy = state[3:5]
-        w = state[5]
         x_desired, y_desired = state[-1]  # next desired position, from track
 
-        actions_taken.append(action)
-        desired_trajectory.append(state[-1])  # h
-        final_trajectory.append(np.array([state[0], state[1]]))  # x, y
+        desired_trajectory.append(state[-1])  # next desired position from track (Read from sensor)
+        final_trajectory.append(np.array([state[0], state[1]]))  # Current position, (Read from sensor)
 
         steps += 1
         current_ind = env.closest_track_ind
@@ -119,10 +123,10 @@ def create_trajectory_general(*args, input_signal="Circle"):
         previous_ind = current_ind
 
     print("Steps(RETURN):", steps)
-    return desired_trajectory, final_trajectory
+    return desired_trajectory, final_trajectory, steps
 
 
-def plot_trajectory(desired_traj, final_trajectory, title):
+def plot_trajectory(desired_trajectory, final_trajectory, title):
     """
     Plot Trajectory
     :param final_trajectory:  Trajectory to be plotted, numpy array (2, steps)
@@ -130,7 +134,7 @@ def plot_trajectory(desired_traj, final_trajectory, title):
     :param title: title of plot
     :return: None
     """
-    assert isinstance(desired_traj, np.ndarray) and desired_traj.shape[0] == 2
+    assert isinstance(desired_trajectory, np.ndarray) and desired_trajectory.shape[0] == 2
     assert isinstance(final_trajectory, np.ndarray) and final_trajectory.shape[0] == 2
 
     plt.ioff()
@@ -157,26 +161,43 @@ def plot_trajectory(desired_traj, final_trajectory, title):
     plt.show()
 
 
-if __name__ == "__main__":
-
-    pd_controller_gains = (2, 1)
+def get_tuned_trajectory(*pd_controller_gains, input_number):
+    """
+    :param input_number:
+    :param pd_controller_gains:
+    :return:
+    """
     input_signals = {1: "Linear",
                      2: "FigureEight",
                      3: "Circle"}
-    inp = 2
-    desired_trajectory_list, final_trajectory_list = create_trajectory_general(*pd_controller_gains,
-                                                                     input_signal=input_signals[inp])
+
+    desired_trajectory_list, final_trajectory_list, steps = create_trajectory_general(
+        *pd_controller_gains,
+        input_signal=input_signals[input_number])
 
     desired_trajectory = np.zeros((2, len(desired_trajectory_list)))
     final_trajectory = np.zeros((2, len(desired_trajectory_list)))
 
     for i in range(len(desired_trajectory_list)):
-        desired_trajectory[0,i], desired_trajectory[1,i] = desired_trajectory_list[i]
-        final_trajectory[0,i], final_trajectory[1,i] = final_trajectory_list[i]
+        desired_trajectory[0, i], desired_trajectory[1, i] = desired_trajectory_list[i]
+        final_trajectory[0, i], final_trajectory[1, i] = final_trajectory_list[i]
 
-    mse = np.mean(sum(desired_trajectory - final_trajectory)**2)
+    mse = np.mean(sum(desired_trajectory - final_trajectory) ** 2)
     print("MSE between trajectories:", mse.item())
+    print(f"Steps taken for {input_signals[input_number]}: {steps}")
 
-    plot_trajectory(desired_trajectory, final_trajectory, title=input_signals[inp])
+    plot_trajectory(desired_trajectory, final_trajectory, title=input_signals[input_number]+" | Steps: "+str(steps))
 
 
+if __name__ == "__main__":
+
+    pd_controller_gains = (3, 2)
+    input_signals = {1: "Linear",
+                     2: "FigureEight",
+                     3: "Circle"}
+
+    needed_figures = (2, 3)
+    for i in needed_figures:
+        get_tuned_trajectory(*pd_controller_gains, input_number=i)
+
+# TO DO : print number of steps in figure
