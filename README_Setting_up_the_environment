@@ -1,0 +1,12 @@
+Packages for 2-Dof Arm:
+
+To set up the 2-DOF arm, you will have to install the following dependency packages using pip.
+
+- gym(0.14.0)
+- pybullet(2.5.5)
+
+To set up the environment clone this (Links to an external site.) to your project folder and install the library as recommended.
+
+Package for RC-car:
+
+Clone the following repo -> https://github.com/benelot/pybullet-gym -> and install the library as recommended.
