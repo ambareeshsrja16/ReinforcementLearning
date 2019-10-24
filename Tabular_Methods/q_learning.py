@@ -1,8 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import gym
 import pybulletgym.envs
-import random
 
 
 class FrozenLakeBot:
@@ -23,11 +21,18 @@ class FrozenLakeBot:
 
         if annealing_function is "linear":
             self.annealing_function = lambda e: 1 - (e/self.episodes)
+        elif annealing_function is "quadratic":
+            self.annealing_function = lambda e: 1 - (e/self.episodes)**2
+        elif annealing_function is "exponential":
+            self.annealing_function = lambda e: np.exp(-e/self.episodes)
 
         self.episodes = episodes  # Max number of iterations allowed to achieve convergence
 
         self.success_rates = np.zeros(self.episodes//100)  # To story Success Rate every 100 episodes
         self.policy = np.zeros(self.states)  # To store optimal policy
+
+        self.title = f"Gamma: {gamma}, Alpha: {alpha}, Annealing Function: {annealing_function}"
+        self.save_filename = f"{annealing_function}_{gamma}_{alpha}.png"
 
     def TestPolicy(self, policy=lambda s: (s+1) % 4, render=False, allowed_steps=200):
         """
@@ -64,7 +69,7 @@ class FrozenLakeBot:
 
         return net_success_rate
 
-    def Q_Learning(self):
+    def do_Q_Learning(self):
         """
         Q_learning TD control algorithm
         :return:
@@ -79,11 +84,20 @@ class FrozenLakeBot:
                 self.update_Q_function(current_state, next_state, action, reward)
                 current_state = next_state
 
+            # Saving data
             if episode % 100 == 0:
                 success_rate = self.TestPolicy(policy=self.get_policy_based_on_Q_function())
-                print("Episode: ", episode)
-                print("\tAverage rate of success for the learned policy:", success_rate)
-                self.success_rates[episode//100] = success_rate
+                try:
+                    self.success_rates[episode//100] = success_rate
+                except IndexError:
+                    print("Ignoring this episode in plotting")
+                    print(f"{episode, len(self.success_rates)}")
+            # Logging
+            if not episode % 1000:
+                print(f"Ep:{episode} Average rate of success for the learned policy:", success_rate)
+                # # DEBUG
+                # print("Episode: ", episode)
+                # print("\tAverage rate of success for the learned policy:", success_rate)
 
             episode += 1
 
@@ -143,19 +157,62 @@ class FrozenLakeBot:
             temp_policy[s] = np.argmax(self.Q_s_a[s, :])
         return temp_policy
 
-    def plot_success_rate(self, title):
+    def plot_success_rate(self, save_path=None, save=True, show =False):
         """
         Plot success rates present in self.success_rates
         :return:
         """
+        if save_path:
+            assert isinstance(save_path, str)
+
         import matplotlib.pyplot as plt
-        plt.line(self.success_rates)
+        import os
+
+        plt.plot(self.success_rates)
+        plt.title(self.title)
+        plt.ylabel("Success Rate")
+        plt.xlabel("Iterations | 1 unit = 100 Episodes")
+
+        if save and save_path:
+            plt.savefig(os.path.join(save_path, self.save_filename))
+        else:
+            plt.savefig(self.title, format='png')
+
+        if show:
+            plt.show()
+
+        plt.close()
+
 
 if __name__ == "__main__":
-    bot = FrozenLakeBot()
-    bot.Q_Learning()
-    optimal_policy = bot.policy
-    print("Final policy Success Rate", bot.TestPolicy(policy=optimal_policy, render=False))
+
+    save_path = "/Users/ambareeshsnjayakumari/Desktop/ECE276C/Tabular_Methods"
+    function_dict = {1: "linear",
+                     2: "quadratic",
+                     3: "exponential"}
+
+    for func in function_dict.values():
+        for alpha in (0.05, 0.1, 0.25,0.5):
+            bot = FrozenLakeBot(gamma=0.99, alpha=alpha, annealing_function=func)
+            bot.do_Q_Learning()
+            bot.plot_success_rate(save_path)
+            optimal_policy = bot.policy
+            print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
+
+    # for func in function_dict.values():
+    #     for gamma in (0.9, 0.95, 0.99):
+    #         bot = FrozenLakeBot(gamma=gamma, alpha=0.05, annealing_function=func)
+    #         bot.do_Q_Learning()
+    #         bot.plot_success_rate(save_path)
+    #         optimal_policy = bot.policy
+    #         print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
+
+    # bot = FrozenLakeBot(gamma=0.99, alpha=0.05, annealing_function=function_dict[2])
+    # bot.do_Q_Learning()
+    # bot.plot_success_rate(save_path)
+    #
+    # optimal_policy = bot.policy
+    # print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
 
 
 
