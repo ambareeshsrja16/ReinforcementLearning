@@ -20,6 +20,10 @@ class FrozenLakeBot:
 
         self.transition_prob_matrix, self.reward_matrix = self.LearnModel()
 
+        self.success_rates = []
+
+        self.title = self.save_filename = "Value Iteration"
+
     def LearnModel(self):
         """
         Perform 10^5 random samples and obtain transition probabilities and rewards
@@ -129,7 +133,14 @@ class FrozenLakeBot:
             steps += 1
 
             current_policy = self.get_policy_based_on_value_function()
-            print(f"Average rate of success for the learned policy at {steps} :", self.TestPolicy(current_policy))
+
+            # # DEBUG
+            # print(f"Average rate of success for the learned policy at {steps} :", self.TestPolicy(current_policy))
+
+            success_rate = self.TestPolicy(current_policy)
+            self.success_rates.append(success_rate)
+            if not steps % 10:
+                print("Average rate of success for the learned policy:", success_rate)
 
             # IF you want to iterate only for self.iterations regardless, regardless of convergence
             if steps == self.iterations:
@@ -217,10 +228,39 @@ class FrozenLakeBot:
 
         return temp_policy
 
+    def plot_success_rate(self, save_path=None, save=True, show=False):
+        """
+        Plot success rates present in self.success_rates
+        :return:
+        """
+        if save_path:
+            assert isinstance(save_path, str)
+
+        import matplotlib.pyplot as plt
+        import os
+
+        plt.plot(self.success_rates)
+        plt.title(self.title)
+        plt.ylabel("Success Rate")
+        plt.xlabel("Iterations")
+
+        if save and save_path:
+            plt.savefig(os.path.join(save_path, self.save_filename))
+        else:
+            plt.savefig(self.title, format='png')
+
+        if show:
+            plt.show()
+
+        plt.close()
+
 
 if __name__ == "__main__":
+    save_path = "/Users/ambareeshsnjayakumari/Desktop/ECE276C/Tabular_Methods"
+
     bot = FrozenLakeBot()
     bot.Value_Iteration()
+    bot.plot_success_rate(save_path=save_path)
     optimal_policy = bot.policy
     print("Final policy Success Rate", bot.TestPolicy(policy=optimal_policy, render=False))
 

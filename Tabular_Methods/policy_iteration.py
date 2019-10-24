@@ -19,6 +19,9 @@ class FrozenLakeBot:
         self.theta = 0.001
 
         self.transition_prob_matrix, self.reward_matrix = self.LearnModel()
+        self.success_rates = []
+
+        self.title = self.save_filename = "Policy Iteration"
 
     def LearnModel(self):
         """
@@ -121,14 +124,23 @@ class FrozenLakeBot:
         steps = 0
         while steps < self.iterations:
             policy_stable = True
-            print("Policy Improvement Iteration", steps)
+            # # DEBUG
+            # print("Policy Improvement Iteration", steps)
             for s in range(self.states):
                 old_action = self.policy[s]
                 self.policy[s] = self.get_best_action(s)
                 if self.policy[s] != old_action:
                     policy_stable &= False  # Policy is not stable yet, it has changed
             steps += 1
-            print("Average rate of success for the learned policy:", self.TestPolicy(self.policy))
+
+            # # DEBUG
+            # print("Average rate of success for the learned policy:", self.TestPolicy(self.policy))
+
+            success_rate = self.TestPolicy(self.policy)
+            self.success_rates.append(success_rate)
+            if not steps % 10:
+                print("Average rate of success for the learned policy:", success_rate)
+
             # IF you want to run it for 50 iterations regardless
             self.PolicyEval()
 
@@ -144,7 +156,6 @@ class FrozenLakeBot:
         Evaluating a given deterministic policy (self.policy) by updating Value function (self.value_of_state)
         value_of_state gets updated on the basis of current policy
         """
-        print("Performing Policy Evaluation")
         while True:
             delta = 0.0
             for s in range(self.states):
@@ -221,10 +232,40 @@ class FrozenLakeBot:
         assert type(discounted_return) == np.float64, f"{discounted_return, type(discounted_return)}"
         return discounted_return
 
+    def plot_success_rate(self, save_path=None, save=True, show=False):
+        """
+        Plot success rates present in self.success_rates
+        :return:
+        """
+        if save_path:
+            assert isinstance(save_path, str)
+
+        import matplotlib.pyplot as plt
+        import os
+
+        plt.plot(self.success_rates)
+        plt.title(self.title)
+        plt.ylabel("Success Rate")
+        plt.xlabel("Iterations")
+
+        if save and save_path:
+            plt.savefig(os.path.join(save_path, self.save_filename))
+        else:
+            plt.savefig(self.title, format='png')
+
+        if show:
+            plt.show()
+
+        plt.close()
+
+
 
 if __name__ == "__main__":
+    save_path = "/Users/ambareeshsnjayakumari/Desktop/ECE276C/Tabular_Methods"
+
     bot = FrozenLakeBot()
     bot.PolicyImprovement()
+    bot.plot_success_rate(save_path=save_path)
     optimal_policy = bot.policy
     print("Final policy Success Rate", bot.TestPolicy(policy=optimal_policy, render=False))
 
