@@ -256,7 +256,7 @@ class FrozenLakeBot:
 
 
 if __name__ == "__main__":
-    save_path = "/Users/ambareeshsnjayakumari/Desktop/ECE276C/Tabular_Methods"
+    save_path = "/Users/ambareeshsnjayakumari/Desktop/Tabular_Methods"
 
     bot = FrozenLakeBot()
     bot.Value_Iteration()

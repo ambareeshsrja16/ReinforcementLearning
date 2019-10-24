@@ -186,7 +186,7 @@ class FrozenLakeBot:
 
 if __name__ == "__main__":
 
-    save_path = "/Users/ambareeshsnjayakumari/Desktop/ECE276C/Tabular_Methods"
+    save_path = "/Users/ambareeshsnjayakumari/Desktop/Tabular_Methods"
     function_dict = {1: "linear",
                      2: "quadratic",
                      3: "exponential"}
