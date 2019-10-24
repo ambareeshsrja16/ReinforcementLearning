@@ -258,8 +258,6 @@ class FrozenLakeBot:
 
         plt.close()
 
-
-
 if __name__ == "__main__":
     save_path = "/Users/ambareeshsnjayakumari/Desktop/ECE276C/Tabular_Methods"
 

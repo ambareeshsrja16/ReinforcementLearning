@@ -191,28 +191,12 @@ if __name__ == "__main__":
                      2: "quadratic",
                      3: "exponential"}
 
-    for func in function_dict.values():
-        for alpha in (0.05, 0.1, 0.25,0.5):
-            bot = FrozenLakeBot(gamma=0.99, alpha=alpha, annealing_function=func)
-            bot.do_Q_Learning()
-            bot.plot_success_rate(save_path)
-            optimal_policy = bot.policy
-            print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
+    bot = FrozenLakeBot(gamma=0.99, alpha=0.05, annealing_function=function_dict[2])
+    bot.do_Q_Learning()
+    bot.plot_success_rate(save_path)
 
-    # for func in function_dict.values():
-    #     for gamma in (0.9, 0.95, 0.99):
-    #         bot = FrozenLakeBot(gamma=gamma, alpha=0.05, annealing_function=func)
-    #         bot.do_Q_Learning()
-    #         bot.plot_success_rate(save_path)
-    #         optimal_policy = bot.policy
-    #         print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
-
-    # bot = FrozenLakeBot(gamma=0.99, alpha=0.05, annealing_function=function_dict[2])
-    # bot.do_Q_Learning()
-    # bot.plot_success_rate(save_path)
-    #
-    # optimal_policy = bot.policy
-    # print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
+    optimal_policy = bot.policy
+    print("Final policy Success Rate", bot.TestPolicy(optimal_policy, render=False))
 
 
 
