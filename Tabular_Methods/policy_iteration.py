@@ -20,7 +20,6 @@ class FrozenLakeBot:
         self.iterations = 50  # Max number of iterations allowed to achieve convergence
         self.theta = 0.001
 
-        self.success_rate = self.TestPolicy()
         self.transition_prob_matrix, self.reward_matrix = self.LearnModel()
 
     def LearnModel(self):
