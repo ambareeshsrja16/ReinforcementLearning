@@ -30,42 +30,36 @@ class PolicyNetwork(nn.Module):
 
 class CartPole:
 
-    def __init__(self, iterations=200, batch_size=500):
+    def __init__(self):
         self.env = gym.make("CartPole-v1")
-        self.iterations = iterations
-        self.batch_size = 500
-
-        self.gamma = 0.99
-
         self.policy_network = PolicyNetwork()
-        self.learning_rate = 0.01
 
-    def do_reinforce(self):
+    def do_reinforce(self, iterations=200, batch_size=500, gamma=0.99, learning_rate=0.01):
         """
         Function updates self.policy_network after performing self.iterations number of updates
         :return:
         """
 
-        average_returns = [0]*self.iterations
+        average_returns = [0]*iterations
 
         cov_scaling_factor = np.random.rand()  # DIKEO should we tune this?
         covariance = cov_scaling_factor * torch.eye(4)  # Covariance matrix initialized to a random value
-        optimizer = torch.optim.SGD(self.policy_network.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.SGD(self.policy_network.parameters(), lr=learning_rate)
 
-        for iteration in range(self.iterations):  # Updated once per loop
+        for iteration in range(iterations):  # Updated once per loop
 
             optimizer.zero_grad()  # Clear gradients, to prevent accumulation
             step = 0
             prev_state = self.env.reset()
-            current_trajectory = {"log_probabilities": [0]*self.batch_size,
-                                       "rewards": [0]*self.batch_size}
-            while step < self.batch_size:  # collection of data for trajectories
+            current_trajectory = {"log_probabilities": [0]*batch_size,
+                                       "rewards": [0]*batch_size}
+            while step < batch_size:  # collection of data for trajectories
 
                 # DIKEO Check this?
                 probabilities = self.policy_network(prev_state)  # Forward pass
 
                 assert probabilities.shape == (2,), f"{probabilities.shape}"
-                assert torch.isclose(sum(probabilities), torch.Tensor([1.0])), f"{sum(probabilities)}"
+                assert 0.99 <= sum(probabilities) <= 1.01, f"{sum(probabilities)}"
 
                 probable_actions = torch.distributions.Categorical(probabilities)
                 # DIKEO presumably 2 element vector of associated probabilities
@@ -74,12 +68,13 @@ class CartPole:
                 assert action.item() in (0, 1), f"{action}"
 
                 current_state, reward, done, _ = self.env.step(action.item())
-                # DIKEO, what to do if you get stuck in done?
 
                 current_trajectory["log_probabilities"][step] = probable_actions.log_prob(action)
                 current_trajectory["rewards"][step] = reward
 
                 prev_state = current_state
+                if done:
+                    prev_state = self.env.reset()
                 step += 1
 
             # DIKEO
@@ -88,8 +83,9 @@ class CartPole:
             # Assert for covariance matrix eigenvalues to be >0 and <0.001
             # G(T)
             # DIKEO Is this always calculated from the start?
-            discounted_reward = sum(current_trajectory["rewards"][step] * self.gamma**step
-                                    for step in range(self.batch_size))
+
+            discounted_reward = sum(current_trajectory["rewards"][step] * gamma**step
+                                    for step in range(batch_size))
             sum_of_log_prob = sum(current_trajectory["log_probabilities"])
 
             average_returns[iteration] = discounted_reward
@@ -98,12 +94,12 @@ class CartPole:
             loss = -1 * discounted_reward * sum_of_log_prob
             loss.backward()
             optimizer.step()
-            print("Iteration:", iteration)
+            print(f"Iteration: {iteration}, Discounted Reward (G(tau)): {discounted_reward}")
 
         self.plot_average_returns(average_returns)
 
     @staticmethod
-    def plot_average_returns(returns, title ="Returns at iteration "):
+    def plot_average_returns(returns, title ="Average Returns"):
         """
 
         :param returns:
@@ -113,11 +109,11 @@ class CartPole:
         fig, ax = plt.subplots()
         ax.plot(returns)
         plt.title(title)
+        plt.ylabel("Iterations")
         plt.show()
-
 
 if __name__ == "__main__":
     save_path = "/Users/ambareeshsnjayakumari/Desktop/Tabular_Methods"
     bot = CartPole()
-    bot.do_reinforce()
+    bot.do_reinforce(iterations=10, batch_size=500)
 
