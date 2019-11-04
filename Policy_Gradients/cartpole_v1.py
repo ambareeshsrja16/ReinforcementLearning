@@ -221,11 +221,10 @@ class CartPole:
 
                 if done:  # episode terminated
                     T = len(current_trajectory["rewards"])  # Total steps
-                    discounted_reward = sum((current_trajectory["rewards"][t] - b) * (gamma ** t) for t in
+                    discounted_reward = sum((current_trajectory["rewards"][t]) * (gamma ** t) for t in
                                             range(len(current_trajectory["rewards"])))
 
-                    objective_over_all_episodes = [current_trajectory["log_probabilities"][t] * sum(
-                        [(gamma ** (t_bar - t)) * current_trajectory["rewards"][t_bar]])
+                    objective_over_all_episodes = [current_trajectory["log_probabilities"][t] * sum([(gamma ** (t_bar - t)) * (current_trajectory["rewards"][t_bar]-b)])
                                                    for t in range(T)
                                                    for t_bar in range(t, T)]
 
@@ -287,7 +286,7 @@ if __name__ == "__main__":
                        3: CartPole.do_reinforce_modified_policy_gradient_bias_subtracted}
 
     bot = CartPole(16)
-    required_function = reinforce_types[2]
+    required_function = reinforce_types[3]
     required_function(bot, iterations=200, batch_size=500, learning_rate=0.01)
 
 
