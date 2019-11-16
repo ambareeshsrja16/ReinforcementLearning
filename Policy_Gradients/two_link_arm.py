@@ -135,8 +135,8 @@ class TwoLinkArm:
 if __name__ == "__main__":
     save_path = "/Users/ambareeshsnjayakumari/Desktop/Policy_Gradients"
     bot = TwoLinkArm()
-    bot.do_reinforce_modified_policy_gradient_bias_subtracted(iterations=500,
-                                                              batch_size=1500,
+    bot.do_reinforce_modified_policy_gradient_bias_subtracted(iterations=100,
+                                                              batch_size=1000,
                                                               gamma=0.9,
                                                               learning_rate=3e-4,
                                                               init_variance=0.01)
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     # time.sleep(3)
     while steps < 300:
         a, _ = bot.policy_network(state)
-        state, reward, done, info = bot.env.step(np.array(a))
+        state, reward, done, info = bot.env.step(a)
         steps += 1
         bot.env.render()
         time.sleep(0.1)
